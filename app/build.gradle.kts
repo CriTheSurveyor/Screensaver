@@ -15,8 +15,22 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    // One fixed key for every build, so a new APK installs over the old one and keeps settings and permissions.
+    // Key and password come from GitHub Secrets (see the workflow); without them the build falls back to the default debug key.
+    val keyPassword = System.getenv("KEYSTORE_PASSWORD")
+    val fixed = if (keyPassword != null && file("standby.keystore").exists()) signingConfigs.create("fixed") {
+        storeFile = file("standby.keystore")
+        storePassword = keyPassword
+        keyAlias = "standby"
+        this.keyPassword = keyPassword
+        storeType = "pkcs12"
+    } else null
     buildTypes {
-        release { isMinifyEnabled = false }
+        debug { if (fixed != null) signingConfig = fixed }
+        release {
+            isMinifyEnabled = false
+            if (fixed != null) signingConfig = fixed
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

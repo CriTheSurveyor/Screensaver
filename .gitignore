@@ -3,3 +3,5 @@ build/
 local.properties
 .idea/
 *.iml
+app/standby.keystore
+standby.keystore.b64.txt
