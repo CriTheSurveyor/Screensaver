@@ -100,7 +100,7 @@ class WatchService : Service(), SensorEventListener {
     private fun open() {
         // without "display over other apps" Android blocks activity starts from the background
         if (Bus.shown || !Settings.canDrawOverlays(this)) return
-        startActivity(Intent(this, StandByActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        startActivity(Intent(this, StandByActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
     }
 
     // accelerometer and wake lock only while charging: free on the charger, nothing on battery.

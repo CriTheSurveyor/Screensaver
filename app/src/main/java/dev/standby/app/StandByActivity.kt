@@ -20,6 +20,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -56,6 +62,8 @@ class StandByActivity : ComponentActivity() {
         setShowWhenLocked(true)
         setTurnScreenOn(true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // the lock screen is portrait: cut straight to landscape instead of the system's spinning rotation
+        window.attributes = window.attributes.also { it.rotationAnimation = WindowManager.LayoutParams.ROTATION_ANIMATION_JUMPCUT }
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowCompat.getInsetsController(window, window.decorView).run {
             hide(WindowInsetsCompat.Type.systemBars())
@@ -74,7 +82,11 @@ class StandByActivity : ComponentActivity() {
             }
             // lifted off the charger or turned upright: close like iOS
             if (!preview) LaunchedEffect(Unit) { Bus.exit.collect { finish() } }
-            StandByScreen(prefs, night)
+            // nothing is drawn until the display is already landscape, then it fades in: no portrait frame ever shows
+            val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+            AnimatedVisibility(landscape, enter = fadeIn(tween(500)), exit = fadeOut(tween(120))) {
+                StandByScreen(prefs, night)
+            }
         }
     }
 
