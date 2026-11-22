@@ -37,14 +37,17 @@ class WatchService : Service(), SensorEventListener {
     private var wasReady = false
     private val handler = Handler(Looper.getMainLooper())
 
-    // a new GitHub build becomes a notification; tapping it opens the app, where one tap installs it
+    // a new GitHub build installs itself; only without the install permission it falls back to a notification
     private val updateCheck = object : Runnable {
         override fun run() {
-            thread {
-                val r = Updater.latest()
-                if (r != null && r.version > Updater.installedVersion(this@WatchService)) notifyUpdate(r.version)
+            // installing restarts the app: never while StandBy is on screen, try again at the next round
+            if (!Bus.shown) thread {
+                val r = Updater.latest() ?: return@thread
+                if (r.version <= Updater.installedVersion(this@WatchService)) return@thread
+                if (packageManager.canRequestPackageInstalls()) runCatching { Updater.install(this@WatchService, r) }
+                else notifyUpdate(r.version)
             }
-            handler.postDelayed(this, 12 * 3600_000L)
+            handler.postDelayed(this, 3 * 3600_000L)
         }
     }
 
@@ -181,6 +184,8 @@ class WatchService : Service(), SensorEventListener {
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED && Prefs(context).enabled) WatchService.start(context)
+        // after a reboot, and after an update (which stops the app), the watcher starts again by itself
+        val restart = intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
+        if (restart && Prefs(context).enabled) WatchService.start(context)
     }
 }

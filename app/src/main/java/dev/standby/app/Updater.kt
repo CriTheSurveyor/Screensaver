@@ -1,6 +1,10 @@
 package dev.standby.app
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
+import android.os.Build
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -36,7 +40,10 @@ object Updater {
     /** Streams the APK into an install session; Android then shows its own "Update this app?" prompt. Call off the main thread. */
     fun install(context: Context, release: Release) {
         val installer = context.packageManager.packageInstaller
-        val id = installer.createSession(PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL))
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        // Android 12+: no prompt once this app installed the current version itself; the very first self-update still asks
+        if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        val id = installer.createSession(params)
         installer.openSession(id).use { session ->
             URL(release.apk).openStream().use { input ->
                 session.openWrite("standby.apk", 0, -1).use { out ->
@@ -57,7 +64,25 @@ object Updater {
 class InstallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -1) != PackageInstaller.STATUS_PENDING_USER_ACTION) return
-        val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java) ?: return
-        context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) ?: return
+        if (MainActivity.visible) {
+            context.startActivity(confirm)
+            return
+        }
+        // Android wants a tap this time: ask through a notification rather than a dialog popping up by itself
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel("update", "Aggiornamenti", NotificationManager.IMPORTANCE_DEFAULT))
+        val tap = PendingIntent.getActivity(context, 3, confirm, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        nm.notify(
+            2,
+            Notification.Builder(context, "update")
+                .setSmallIcon(R.drawable.ic_stat)
+                .setContentTitle("Aggiornamento StandBy pronto")
+                .setContentText("Tocca per installarlo")
+                .setContentIntent(tap)
+                .setAutoCancel(true)
+                .build(),
+        )
     }
 }

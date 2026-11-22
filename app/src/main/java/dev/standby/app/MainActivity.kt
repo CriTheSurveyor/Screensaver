@@ -85,7 +85,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        visible = true
         resumed.intValue++
+    }
+
+    override fun onPause() {
+        visible = false
+        super.onPause()
+    }
+
+    companion object {
+        /** While the settings are open, an install prompt can show at once instead of as a notification. */
+        @Volatile var visible = false
     }
 }
 
