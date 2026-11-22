@@ -17,6 +17,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.BatteryManager
 import android.os.Build
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.content.ContextCompat
@@ -27,9 +28,10 @@ class WatchService : Service(), SensorEventListener {
     private lateinit var sensors: SensorManager
     private lateinit var keyguard: KeyguardManager
     private val upright = Debounce(1500)
+    private lateinit var wakeLock: PowerManager.WakeLock
     private var charging = false
     private var listening = false
-    private var launched = false
+    private var wasReady = false
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
@@ -40,8 +42,10 @@ class WatchService : Service(), SensorEventListener {
                     if (charging != listening) setListening(charging)
                     check()
                 }
-                // locking the phone on the stand (power button or timeout) is the iOS gesture for StandBy
-                Intent.ACTION_SCREEN_OFF -> if (ready() && !Bus.shown) open()
+                // on the stand StandBy replaces the dark screen: every screen-off brings it back
+                Intent.ACTION_SCREEN_OFF -> if (ready()) open()
+                // backup for phones that refuse an activity start while the screen is going dark
+                Intent.ACTION_SCREEN_ON -> if (ready() && keyguard.isKeyguardLocked) open()
             }
         }
     }
@@ -51,6 +55,7 @@ class WatchService : Service(), SensorEventListener {
         prefs = Prefs(this)
         sensors = getSystemService(SensorManager::class.java)
         keyguard = getSystemService(KeyguardManager::class.java)
+        wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "standby:watch")
         try {
             goForeground()
         } catch (e: Exception) {
@@ -60,6 +65,7 @@ class WatchService : Service(), SensorEventListener {
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_BATTERY_CHANGED)
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
         }
         ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
@@ -84,31 +90,31 @@ class WatchService : Service(), SensorEventListener {
     private fun ready() = charging && upright.stable
 
     private fun check() {
-        if (!ready()) {
-            if (launched) Bus.exit.tryEmit(Unit)
-            launched = false
-            return
-        }
-        // only over the lock screen: never interrupt someone watching a video on the stand
-        if (!launched && keyguard.isKeyguardLocked && !Bus.shown) open()
+        val ready = ready()
+        if (wasReady && !ready) Bus.exit.tryEmit(Unit)
+        // just put on the stand: open over the lock screen, never over someone watching a video
+        if (!wasReady && ready && keyguard.isKeyguardLocked) open()
+        wasReady = ready
     }
 
     private fun open() {
-        launched = true
         // without "display over other apps" Android blocks activity starts from the background
-        if (!Settings.canDrawOverlays(this)) return
+        if (Bus.shown || !Settings.canDrawOverlays(this)) return
         startActivity(Intent(this, StandByActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    // the accelerometer runs only while charging, so the service costs nothing on battery
+    // accelerometer and wake lock only while charging: free on the charger, nothing on battery.
+    // The wake lock keeps the sensor alive with the screen off, so placing the phone on the stand is noticed.
     private fun setListening(on: Boolean) {
         listening = on
         if (on) {
             sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
                 ?.let { sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+            if (!wakeLock.isHeld) wakeLock.acquire(24 * 3600_000L)
         } else {
             sensors.unregisterListener(this)
             upright.reset()
+            if (wakeLock.isHeld) wakeLock.release()
         }
     }
 

@@ -31,10 +31,4 @@ class Prefs(context: Context) {
     var accent: Int
         get() = sp.getInt("accent", 1)
         set(v) = sp.edit().putInt("accent", v).apply()
-    var stackA: Int
-        get() = sp.getInt("stackA", 0)
-        set(v) = sp.edit().putInt("stackA", v).apply()
-    var stackB: Int
-        get() = sp.getInt("stackB", 0)
-        set(v) = sp.edit().putInt("stackB", v).apply()
 }

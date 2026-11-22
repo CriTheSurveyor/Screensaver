@@ -174,7 +174,7 @@ private fun SettingsScreen(prefs: Prefs, resumed: Int) {
             Text("Prova StandBy", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         }
         Text(
-            "Nella schermata: tocca l'orologio per cambiare colore, scorri in verticale per cambiare stile. Indietro per uscire.",
+            "Nella schermata: tocca l'orologio per cambiare colore, scorri in verticale per cambiare stile. Tasto di accensione per tornare al telefono.",
             color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp, start = 4.dp, end = 4.dp),
         )
     }

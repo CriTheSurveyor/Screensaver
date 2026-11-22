@@ -1,5 +1,10 @@
 package dev.standby.app
 
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -16,13 +21,38 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
 class StandByActivity : ComponentActivity() {
+    private var leaving = false
+
+    // Apps never see the power key itself; while StandBy keeps the screen on, a screen-off can only be that key.
+    private val powerKey = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            leaving = true
+            // bringing this activity forward again wakes the screen (turnScreenOn), then onResume hands over to the phone
+            startActivity(Intent(c, StandByActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!leaving) return
+        leaving = false
+        // asks for fingerprint/PIN, then the home screen appears; cancelled, the lock screen stays
+        getSystemService(KeyguardManager::class.java).requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+            override fun onDismissSucceeded() = finish()
+            override fun onDismissCancelled() = finish()
+            override fun onDismissError() = finish()
+        })
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ContextCompat.registerReceiver(this, powerKey, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED)
         setShowWhenLocked(true)
         setTurnScreenOn(true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -49,6 +79,7 @@ class StandByActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        unregisterReceiver(powerKey)
         Bus.shown = false
         super.onDestroy()
     }
