@@ -68,7 +68,8 @@ private val Hairline = Color(0xFF3A3A3C)
 /** Left: the charging circle. Right: time, weather, calendar, alarm and next event in four tiles. */
 @Composable
 fun WidgetsPage(now: LocalDateTime, prefs: Prefs, accent: Color) {
-    Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(Gap), verticalAlignment = Alignment.CenterVertically) {
+    // wide side margins keep the cards clear of the camera cutout, whichever side it lands on
+    Row(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(Gap), verticalAlignment = Alignment.CenterVertically) {
         PowerCircle(Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true))
         InfoCard(now, prefs.use24h, accent, Modifier.weight(1f))
     }
@@ -111,24 +112,24 @@ private fun PowerCircle(modifier: Modifier) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Label(listOf(if (p.charging) "In carica" else "Batteria", p.source).filter { it.isNotEmpty() }.joinToString(" · "), colour)
             Row {
-                BigText("$whole", 76.sp, Color.White, FontWeight.Bold, Modifier.alignByBaseline())
+                BigText("$whole", 88.sp, Color.White, FontWeight.Bold, Modifier.alignByBaseline())
                 Text(
                     "$sep%02d%%".format(cents), Modifier.alignByBaseline(),
-                    color = Color.White.copy(alpha = 0.55f), fontSize = 28.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color.White.copy(alpha = 0.55f), fontSize = 32.sp, fontWeight = FontWeight.SemiBold,
                     fontFamily = LocalFont.current, style = TextStyle(fontFeatureSettings = "tnum"),
                 )
             }
             Caption(p.fullInMs?.let { "Piena tra ${duration(it)}" } ?: if (p.charging) "Calcolo del tempo…" else "Non in carica")
             Spacer(Modifier.height(14.dp))
             // the four live readings in their own box, split by hairlines; sized to sit inside the circle
-            Column(Modifier.width(200.dp).clip(RoundedCornerShape(18.dp)).background(TileBg)) {
-                Row(Modifier.height(48.dp)) {
+            Column(Modifier.width(224.dp).clip(RoundedCornerShape(18.dp)).background(TileBg)) {
+                Row(Modifier.height(54.dp)) {
                     Stat("Potenza", p.watts?.let { "%.1f W".format(it) })
                     VLine()
                     Stat("Corrente", p.milliamps?.let { "$it mA" })
                 }
                 Box(Modifier.fillMaxWidth().height(0.5.dp).background(Hairline))
-                Row(Modifier.height(48.dp)) {
+                Row(Modifier.height(54.dp)) {
                     Stat("Tensione", p.volts?.let { "%.2f V".format(it) })
                     VLine()
                     Stat("Temp.", p.celsius?.let { "%.1f °C".format(it) })
@@ -138,18 +139,22 @@ private fun PowerCircle(modifier: Modifier) {
     }
 }
 
-/** Progress round the circle's own edge, from 12 o'clock clockwise. */
+// a 300° ring open at the bottom, like a gauge: the gap leaves room for the readings
+private const val RingStart = 120f
+private const val RingSweep = 300f
+
+/** Progress round the circle's own edge, clockwise from the bottom-left end of the gap. */
 private fun Modifier.chargeRing(progress: Float, colour: Color, glow: Float) = drawBehind {
     val w = 8.dp.toPx()
     val inset = w / 2 + 3.dp.toPx()
     val d = size.minDimension - 2 * inset
     val topLeft = Offset((size.width - d) / 2, (size.height - d) / 2)
     val arc = androidx.compose.ui.geometry.Size(d, d)
-    drawArc(colour.copy(alpha = 0.16f), 0f, 360f, false, topLeft, arc, style = Stroke(w))
+    drawArc(colour.copy(alpha = 0.16f), RingStart, RingSweep, false, topLeft, arc, style = Stroke(w, cap = StrokeCap.Round))
     if (progress <= 0f) return@drawBehind
-    drawArc(colour, -90f, 360f * progress, false, topLeft, arc, style = Stroke(w, cap = StrokeCap.Round))
+    drawArc(colour, RingStart, RingSweep * progress, false, topLeft, arc, style = Stroke(w, cap = StrokeCap.Round))
     if (glow > 0f) {
-        val a = Math.toRadians(360.0 * progress - 90)
+        val a = Math.toRadians(RingStart + RingSweep * progress.toDouble())
         val head = Offset(center.x + cos(a).toFloat() * d / 2, center.y + sin(a).toFloat() * d / 2)
         drawCircle(colour.copy(alpha = glow * 0.5f), w * 1.5f, head)
     }

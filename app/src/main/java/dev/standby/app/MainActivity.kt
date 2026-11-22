@@ -229,6 +229,15 @@ private fun SettingsScreen(prefs: Prefs, resumed: Int) {
             LinkRow("Foto", if (photos == 0) "Scegli" else "$photos selezionate") {
                 pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             }
+            if (photos > 0) {
+                Line()
+                LinkRow("Rimuovi foto", "Tutte", warn = true) {
+                    // give back the read access taken when they were picked
+                    prefs.photos.forEach { runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(it), Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
+                    prefs.photos = emptySet()
+                    photos = 0
+                }
+            }
             Line()
             val intervals = listOf(10, 30, 60, 300)
             ChoiceRow("Cambio foto", listOf("10 s", "30 s", "1 min", "5 min"), intervals.indexOf(photoSeconds)) {
