@@ -17,10 +17,13 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.content.ContextCompat
+import kotlin.concurrent.thread
 
 /** Waits for charging (wireless by default) + standing in landscape + locked, then opens StandBy as iOS does. */
 class WatchService : Service(), SensorEventListener {
@@ -32,6 +35,18 @@ class WatchService : Service(), SensorEventListener {
     private var charging = false
     private var listening = false
     private var wasReady = false
+    private val handler = Handler(Looper.getMainLooper())
+
+    // a new GitHub build becomes a notification; tapping it opens the app, where one tap installs it
+    private val updateCheck = object : Runnable {
+        override fun run() {
+            thread {
+                val r = Updater.latest()
+                if (r != null && r.version > Updater.installedVersion(this@WatchService)) notifyUpdate(r.version)
+            }
+            handler.postDelayed(this, 12 * 3600_000L)
+        }
+    }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
@@ -68,11 +83,13 @@ class WatchService : Service(), SensorEventListener {
             addAction(Intent.ACTION_SCREEN_ON)
         }
         ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        handler.postDelayed(updateCheck, 60_000L)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
 
     override fun onDestroy() {
+        handler.removeCallbacks(updateCheck)
         runCatching { unregisterReceiver(receiver) }
         setListening(false)
         super.onDestroy()
@@ -131,6 +148,22 @@ class WatchService : Service(), SensorEventListener {
             .build()
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         else startForeground(1, n)
+    }
+
+    private fun notifyUpdate(version: Int) {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel("update", "Aggiornamenti", NotificationManager.IMPORTANCE_DEFAULT))
+        val open = PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        nm.notify(
+            2,
+            Notification.Builder(this, "update")
+                .setSmallIcon(R.drawable.ic_stat)
+                .setContentTitle("Aggiornamento StandBy")
+                .setContentText("La versione $version è pronta: tocca per installarla")
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .build(),
+        )
     }
 
     companion object {

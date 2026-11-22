@@ -11,9 +11,19 @@ class Prefs(context: Context) {
     var wirelessOnly: Boolean
         get() = sp.getBoolean("wirelessOnly", true)
         set(v) = sp.edit().putBoolean("wirelessOnly", v).apply()
-    var nightAuto: Boolean
-        get() = sp.getBoolean("nightAuto", true)
-        set(v) = sp.edit().putBoolean("nightAuto", v).apply()
+    /** 0 automatic (light sensor), 1 always, 2 never. */
+    var nightMode: Int
+        get() = sp.getInt("nightMode", 0)
+        set(v) = sp.edit().putInt("nightMode", v).apply()
+    var showSeconds: Boolean
+        get() = sp.getBoolean("showSeconds", false)
+        set(v) = sp.edit().putBoolean("showSeconds", v).apply()
+    var photoSeconds: Int
+        get() = sp.getInt("photoSeconds", 30)
+        set(v) = sp.edit().putInt("photoSeconds", v).apply()
+    var font: Int
+        get() = sp.getInt("font", 1)
+        set(v) = sp.edit().putInt("font", v).apply()
     var use24h: Boolean
         get() = sp.getBoolean("use24h", true)
         set(v) = sp.edit().putBoolean("use24h", v).apply()

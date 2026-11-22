@@ -74,7 +74,7 @@ class StandByActivity : ComponentActivity() {
         val preview = intent.getBooleanExtra("preview", false)
 
         setContent {
-            val night = rememberNight(prefs.nightAuto)
+            val night = when (prefs.nightMode) { 1 -> true; 2 -> false; else -> rememberNight(true) }
             LaunchedEffect(night) {
                 window.attributes = window.attributes.also {
                     it.screenBrightness = if (night) 0.01f else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE

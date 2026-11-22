@@ -12,8 +12,9 @@ android {
         applicationId = "dev.standby.app"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // GitHub's build number: every build is a higher version, so the in-app updater can tell new from old
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toInt() ?: 1
+        versionName = "1.$versionCode"
     }
     // One fixed key for every build, so a new APK installs over the old one and keeps settings and permissions.
     // Key and password come from GitHub Secrets (see the workflow); without them the build falls back to the default debug key.

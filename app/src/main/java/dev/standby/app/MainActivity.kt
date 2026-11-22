@@ -15,7 +15,19 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.font.FontFamily
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -89,7 +101,24 @@ private fun SettingsScreen(prefs: Prefs, resumed: Int) {
 
     var enabled by remember { mutableStateOf(prefs.enabled) }
     var wireless by remember { mutableStateOf(prefs.wirelessOnly) }
-    var night by remember { mutableStateOf(prefs.nightAuto) }
+    var night by remember { mutableIntStateOf(prefs.nightMode) }
+    var seconds by remember { mutableStateOf(prefs.showSeconds) }
+    var font by remember { mutableIntStateOf(prefs.font) }
+    var accent by remember { mutableIntStateOf(prefs.accent) }
+    var photoSeconds by remember { mutableIntStateOf(prefs.photoSeconds) }
+
+    val scope = rememberCoroutineScope()
+    val installed = remember { Updater.installedVersion(context) }
+    var release by remember { mutableStateOf<Updater.Release?>(null) }
+    var updateText by remember { mutableStateOf("Controllo…") }
+    LaunchedEffect(resumed) {
+        release = withContext(Dispatchers.IO) { Updater.latest() }
+        updateText = when {
+            release == null -> "Non raggiungibile"
+            release!!.version > installed -> "Installa la ${release!!.version}"
+            else -> "Aggiornata"
+        }
+    }
     var h24 by remember { mutableStateOf(prefs.use24h) }
     var photos by remember { mutableIntStateOf(prefs.photos.size) }
 
@@ -149,10 +178,36 @@ private fun SettingsScreen(prefs: Prefs, resumed: Int) {
             }
         }
 
+        Group("Aspetto") {
+            ChoiceRow("Carattere", Fonts.map { it.name }, font, Fonts.map { it.family }) {
+                font = it
+                prefs.font = it
+            }
+            Line()
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text("Colore", color = Color.White, fontSize = 17.sp)
+                Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Accents.forEachIndexed { i, c ->
+                        Box(
+                            Modifier.size(32.dp)
+                                .border(2.dp, if (i == accent) Color.White else Color.Transparent, CircleShape)
+                                .padding(4.dp).clip(CircleShape).background(c)
+                                .clickable { accent = i; prefs.accent = i },
+                        )
+                    }
+                }
+            }
+        }
+
         Group("Schermata") {
-            ToggleRow("Modalità notte", night, "Rosso e luminosità minima quando la stanza è buia") {
+            ChoiceRow("Modalità notte", listOf("Automatica", "Sempre", "Mai"), night) {
                 night = it
-                prefs.nightAuto = it
+                prefs.nightMode = it
+            }
+            Line()
+            ToggleRow("Secondi sull'orologio", seconds) {
+                seconds = it
+                prefs.showSeconds = it
             }
             Line()
             ToggleRow("Formato 24 ore", h24) {
@@ -162,6 +217,29 @@ private fun SettingsScreen(prefs: Prefs, resumed: Int) {
             Line()
             LinkRow("Foto", if (photos == 0) "Scegli" else "$photos selezionate") {
                 pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+            Line()
+            val intervals = listOf(10, 30, 60, 300)
+            ChoiceRow("Cambio foto", listOf("10 s", "30 s", "1 min", "5 min"), intervals.indexOf(photoSeconds)) {
+                photoSeconds = intervals[it]
+                prefs.photoSeconds = intervals[it]
+            }
+        }
+
+        Group("Aggiornamenti") {
+            LinkRow("Versione $installed", updateText, warn = release?.let { it.version > installed } == true) {
+                val r = release ?: return@LinkRow
+                if (r.version <= installed) return@LinkRow
+                // Android asks once to allow this app to install updates
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    openSystem(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                    return@LinkRow
+                }
+                updateText = "Download…"
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) { runCatching { Updater.install(context, r) }.isSuccess }
+                    if (!ok) updateText = "Download non riuscito"
+                }
             }
         }
 
@@ -206,6 +284,25 @@ private fun ToggleRow(title: String, checked: Boolean, subtitle: String? = null,
                 uncheckedTrackColor = Color(0xFF39393D), uncheckedThumbColor = Color.White, uncheckedBorderColor = Color(0xFF39393D),
             ),
         )
+    }
+}
+
+@Composable
+private fun ChoiceRow(title: String, options: List<String>, selected: Int, fonts: List<FontFamily>? = null, onSelect: (Int) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(title, color = Color.White, fontSize = 17.sp)
+        Row(Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEachIndexed { i, label ->
+                val on = i == selected
+                Text(
+                    label,
+                    Modifier.clip(RoundedCornerShape(50)).background(if (on) Color.White else Color(0xFF2C2C2E))
+                        .clickable { onSelect(i) }.padding(horizontal = 16.dp, vertical = 10.dp),
+                    color = if (on) Color.Black else Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    fontFamily = fonts?.get(i),
+                )
+            }
+        }
     }
 }
 

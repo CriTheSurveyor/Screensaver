@@ -20,6 +20,7 @@ import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -72,7 +73,8 @@ val Accents = listOf(
 )
 private val NightRed = Color(0xFFFF2D1F)
 
-fun timeText(t: LocalDateTime, h24: Boolean): String = t.format(DateTimeFormatter.ofPattern(if (h24) "HH:mm" else "h:mm"))
+fun timeText(t: LocalDateTime, h24: Boolean, seconds: Boolean = false): String =
+    t.format(DateTimeFormatter.ofPattern((if (h24) "HH:mm" else "h:mm") + if (seconds) ":ss" else ""))
 fun dateText(t: LocalDateTime, pattern: String): String =
     t.format(DateTimeFormatter.ofPattern(pattern, Locale.getDefault())).replaceFirstChar { it.titlecase(Locale.getDefault()) }
 
@@ -89,6 +91,7 @@ fun rememberNow(): State<LocalDateTime> = produceState(LocalDateTime.now()) {
 fun StandByScreen(prefs: Prefs, night: Boolean) {
     val now by rememberNow()
     var accentIndex by remember { mutableIntStateOf(prefs.accent) }
+    val font = Fonts[prefs.font.coerceIn(0, Fonts.lastIndex)].family
     val accent = Accents[accentIndex % Accents.size]
     val pager = rememberPagerState(prefs.page) { 3 }
     LaunchedEffect(pager.settledPage) { prefs.page = pager.settledPage }
@@ -97,7 +100,7 @@ fun StandByScreen(prefs: Prefs, night: Boolean) {
     val driftX = ((now.minute % 5) - 2) * 2
     val driftY = ((now.minute % 3) - 1) * 2
 
-    Box(Modifier.fillMaxSize().background(Color.Black).nightFilter(night)) {
+    CompositionLocalProvider(LocalFont provides font) { Box(Modifier.fillMaxSize().background(Color.Black).nightFilter(night)) {
         HorizontalPager(pager, Modifier.fillMaxSize().offset(driftX.dp, driftY.dp)) { page ->
             when (page) {
                 0 -> WidgetsPage(now, prefs, accent)
@@ -108,7 +111,7 @@ fun StandByScreen(prefs: Prefs, night: Boolean) {
                 }
             }
         }
-    }
+    } }
 }
 
 /** Desaturate, then multiply by red: every page turns red without each widget knowing about night mode. */
@@ -131,7 +134,7 @@ private fun ClockPage(now: LocalDateTime, prefs: Prefs, accent: Color, nextColou
         Modifier.fillMaxSize().clickable(interactionSource = null, indication = null, onClick = nextColour),
     ) { style ->
         when (style) {
-            0 -> DigitalClock(now, prefs.use24h, accent)
+            0 -> DigitalClock(now, prefs.use24h, prefs.showSeconds, accent)
             1 -> Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) { AnalogClock(accent, Modifier) }
             2 -> SolarClock(now, prefs.use24h, accent)
             else -> StackedClock(now, prefs.use24h, accent)
@@ -140,21 +143,11 @@ private fun ClockPage(now: LocalDateTime, prefs: Prefs, accent: Color, nextColou
 }
 
 @Composable
-fun BigText(text: String, size: TextUnit, color: Color, weight: FontWeight, modifier: Modifier = Modifier) = Text(
-    text, modifier,
-    color = color, fontSize = size, fontWeight = weight,
-    letterSpacing = (-0.03).em, lineHeight = size, maxLines = 1, softWrap = false,
-    style = TextStyle(
-        fontFeatureSettings = "tnum",
-        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
-    ),
-)
-
-@Composable
-private fun DigitalClock(now: LocalDateTime, h24: Boolean, accent: Color) =
+private fun DigitalClock(now: LocalDateTime, h24: Boolean, seconds: Boolean, accent: Color) =
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        val size = with(LocalDensity.current) { minOf(maxWidth / 2.9f, maxHeight * 0.9f).toSp() }
-        BigText(timeText(now, h24), size, accent, FontWeight.Bold)
+        // width budget in em: "10:42" is about 2.5, "10:42:07" about 4
+        val size = with(LocalDensity.current) { minOf(maxWidth / if (seconds) 4.4f else 2.9f, maxHeight * 0.9f).toSp() }
+        BigText(timeText(now, h24, seconds), size, accent, FontWeight.Bold)
     }
 
 @Composable
@@ -185,7 +178,7 @@ private fun SolarClock(now: LocalDateTime, h24: Boolean, accent: Color) =
         val size = with(LocalDensity.current) { minOf(maxWidth / 3.1f, maxHeight * 0.62f).toSp() }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             BigText(timeText(now, h24), size, Color.White, FontWeight.Thin)
-            Text(dateText(now, "EEEE d MMMM"), color = Muted, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+            Title(dateText(now, "EEEE d MMMM"), color = Muted)
         }
     }
 
@@ -196,6 +189,7 @@ fun AnalogClock(accent: Color, modifier: Modifier, numbers: Boolean = true) {
         while (true) androidx.compose.runtime.withFrameMillis { value = LocalTime.now() }
     }
     val measurer = rememberTextMeasurer()
+    val font = LocalFont.current
     Canvas(modifier.aspectRatio(1f).fillMaxSize()) {
         val r = size.minDimension / 2
         val c = center
@@ -213,7 +207,7 @@ fun AnalogClock(accent: Color, modifier: Modifier, numbers: Boolean = true) {
             val a = Math.toRadians(n * 30.0 - 90)
             val layout = measurer.measure(
                 n.toString(),
-                TextStyle(color = Color.White, fontSize = (r * 0.17f).toSp(), fontWeight = FontWeight.SemiBold),
+                TextStyle(color = Color.White, fontSize = (r * 0.17f).toSp(), fontWeight = FontWeight.SemiBold, fontFamily = font),
             )
             val p = Offset(c.x + cos(a).toFloat() * r * 0.76f, c.y + sin(a).toFloat() * r * 0.76f)
             drawText(layout, topLeft = p - Offset(layout.size.width / 2f, layout.size.height / 2f))
@@ -241,14 +235,14 @@ private fun PhotosPage(now: LocalDateTime, prefs: Prefs) {
     val uris = remember { prefs.photos.map(Uri::parse).shuffled() }
     if (uris.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Scegli le foto dalle impostazioni dell'app", color = Muted, fontSize = 18.sp)
+            Body("Scegli le foto dalle impostazioni dell'app", color = Muted)
         }
         return
     }
     var index by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
         while (true) {
-            delay(15_000)
+            delay(prefs.photoSeconds * 1000L)
             index = (index + 1) % uris.size
         }
     }
@@ -262,7 +256,7 @@ private fun PhotosPage(now: LocalDateTime, prefs: Prefs) {
         // keeps the white clock readable on bright photos
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.5f), 0.55f to Color.Transparent)))
         Column(Modifier.padding(horizontal = 36.dp, vertical = 28.dp)) {
-            Text(dateText(now, "EEEE d MMMM"), color = Color.White.copy(alpha = 0.85f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Title(dateText(now, "EEEE d MMMM"), color = Color.White.copy(alpha = 0.85f))
             BigText(timeText(now, prefs.use24h), 96.sp, Color.White, FontWeight.Bold)
         }
     }
