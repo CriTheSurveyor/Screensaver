@@ -1,0 +1,147 @@
+package dev.standby.app
+
+import android.app.KeyguardManager
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.ServiceInfo
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.os.BatteryManager
+import android.os.Build
+import android.os.SystemClock
+import android.provider.Settings
+import androidx.core.content.ContextCompat
+
+/** Waits for charging (wireless by default) + standing in landscape + locked, then opens StandBy as iOS does. */
+class WatchService : Service(), SensorEventListener {
+    private lateinit var prefs: Prefs
+    private lateinit var sensors: SensorManager
+    private lateinit var keyguard: KeyguardManager
+    private val upright = Debounce(1500)
+    private var charging = false
+    private var listening = false
+    private var launched = false
+
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            when (i.action) {
+                Intent.ACTION_BATTERY_CHANGED -> {
+                    val plugged = i.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
+                    charging = if (prefs.wirelessOnly) plugged == BatteryManager.BATTERY_PLUGGED_WIRELESS else plugged != 0
+                    if (charging != listening) setListening(charging)
+                    check()
+                }
+                // locking the phone on the stand (power button or timeout) is the iOS gesture for StandBy
+                Intent.ACTION_SCREEN_OFF -> if (ready() && !Bus.shown) open()
+            }
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        prefs = Prefs(this)
+        sensors = getSystemService(SensorManager::class.java)
+        keyguard = getSystemService(KeyguardManager::class.java)
+        try {
+            goForeground()
+        } catch (e: Exception) {
+            stopSelf()
+            return
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(Intent.ACTION_SCREEN_OFF)
+        }
+        ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
+
+    override fun onDestroy() {
+        runCatching { unregisterReceiver(receiver) }
+        setListening(false)
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?) = null
+
+    override fun onSensorChanged(e: SensorEvent) {
+        upright.update(isLandscape(e.values[0], e.values[1]), SystemClock.elapsedRealtime())
+        check()
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    private fun ready() = charging && upright.stable
+
+    private fun check() {
+        if (!ready()) {
+            if (launched) Bus.exit.tryEmit(Unit)
+            launched = false
+            return
+        }
+        // only over the lock screen: never interrupt someone watching a video on the stand
+        if (!launched && keyguard.isKeyguardLocked && !Bus.shown) open()
+    }
+
+    private fun open() {
+        launched = true
+        // without "display over other apps" Android blocks activity starts from the background
+        if (!Settings.canDrawOverlays(this)) return
+        startActivity(Intent(this, StandByActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    // the accelerometer runs only while charging, so the service costs nothing on battery
+    private fun setListening(on: Boolean) {
+        listening = on
+        if (on) {
+            sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+                ?.let { sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        } else {
+            sensors.unregisterListener(this)
+            upright.reset()
+        }
+    }
+
+    private fun goForeground() {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel("watch", "StandBy in attesa", NotificationManager.IMPORTANCE_MIN))
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val n = Notification.Builder(this, "watch")
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle("StandBy pronto")
+            .setContentText("Si accende in carica, in orizzontale")
+            .setContentIntent(open)
+            .setOngoing(true)
+            .build()
+        if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        else startForeground(1, n)
+    }
+
+    companion object {
+        fun start(context: Context) {
+            ContextCompat.startForegroundService(context, Intent(context, WatchService::class.java))
+        }
+
+        /** Restart so a changed setting applies at once. */
+        fun sync(context: Context) {
+            context.stopService(Intent(context, WatchService::class.java))
+            if (Prefs(context).enabled) start(context)
+        }
+    }
+}
+
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED && Prefs(context).enabled) WatchService.start(context)
+    }
+}
