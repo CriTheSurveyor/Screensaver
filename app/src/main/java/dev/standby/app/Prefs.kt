@@ -24,6 +24,19 @@ class Prefs(context: Context) {
     var font: Int
         get() = sp.getInt("font", 1)
         set(v) = sp.edit().putInt("font", v).apply()
+    /** 0 = same as the text, else 1 + index in Fonts. */
+    var clockFont: Int
+        get() = sp.getInt("clockFont", 0)
+        set(v) = sp.edit().putInt("clockFont", v).apply()
+    /** Index in ClockWeights, 0 = each clock style's own weight. */
+    var clockWeight: Int
+        get() = sp.getInt("clockWeight", 0)
+        set(v) = sp.edit().putInt("clockWeight", v).apply()
+    /** The user's Do Not Disturb state while StandBy holds it, to put back on exit. */
+    var savedZen: String?
+        get() = sp.getString("savedZen", null)
+        // commit: written right before the activity may die, it must be on disk
+        set(v) { sp.edit().putString("savedZen", v).commit() }
     var use24h: Boolean
         get() = sp.getBoolean("use24h", true)
         set(v) = sp.edit().putBoolean("use24h", v).apply()

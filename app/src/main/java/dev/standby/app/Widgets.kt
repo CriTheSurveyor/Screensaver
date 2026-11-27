@@ -25,7 +25,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -50,7 +58,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
-import java.time.temporal.WeekFields
 import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.floor
@@ -65,19 +72,24 @@ private val Pad = 12.dp
 private val TileBg = Color(0xFF2C2C2E)
 private val Hairline = Color(0xFF3A3A3C)
 
-/** Left: the charging circle. Right: time, weather, calendar, alarm and next event in four tiles. */
+/** Left: the charging circle. Right: time, weather, notifications, alarm and next event in four tiles. */
 @Composable
-fun WidgetsPage(now: LocalDateTime, prefs: Prefs, accent: Color) {
-    // wide side margins keep the cards clear of the camera cutout, whichever side it lands on
-    Row(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(Gap), verticalAlignment = Alignment.CenterVertically) {
-        PowerCircle(Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true))
-        InfoCard(now, prefs.use24h, accent, Modifier.weight(1f))
+fun WidgetsPage(now: LocalDateTime, prefs: Prefs, accent: Color, dock: MutableState<Offset>) {
+    var open by remember { mutableStateOf<Notif?>(null) }
+    Box(Modifier.fillMaxSize()) {
+        // wide side margins keep the cards clear of the camera cutout, whichever side it lands on
+        Row(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(Gap), verticalAlignment = Alignment.CenterVertically) {
+            PowerCircle(Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true))
+            InfoCard(now, prefs.use24h, accent, dock, { open = it }, Modifier.weight(1f))
+        }
+        NotifPreview(open, prefs.use24h) { open = null }
     }
 }
 
+/** [ground] draws between the tile's fill and its content, clipped to its corners. */
 @Composable
-private fun Tile(modifier: Modifier, content: @Composable ColumnScope.() -> Unit) =
-    Column(modifier.fillMaxHeight().clip(RoundedCornerShape(TileRadius)).background(TileBg).padding(16.dp), content = content)
+private fun Tile(modifier: Modifier, ground: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) =
+    Column(modifier.fillMaxHeight().clip(RoundedCornerShape(TileRadius)).background(TileBg).then(ground).padding(16.dp), content = content)
 
 // ---------- battery ----------
 
@@ -178,7 +190,7 @@ private fun duration(ms: Long): String {
 // ---------- info ----------
 
 @Composable
-private fun InfoCard(now: LocalDateTime, h24: Boolean, accent: Color, modifier: Modifier) {
+private fun InfoCard(now: LocalDateTime, h24: Boolean, accent: Color, dock: MutableState<Offset>, onOpen: (Notif) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     val events by produceState(emptyList<Event>(), now.minute / 5) {
         value = withContext(Dispatchers.IO) { upcomingEvents(context) }
@@ -192,6 +204,8 @@ private fun InfoCard(now: LocalDateTime, h24: Boolean, accent: Color, modifier: 
         }
     }
     val alarm = remember(now.minute) { nextAlarm(context) }
+    val notifs by Bus.notifs.collectAsState()
+    val listening = remember { NotifService.enabled(context) }
 
     Column(
         modifier.fillMaxHeight().clip(RoundedCornerShape(CardRadius)).background(CardBg).padding(Pad),
@@ -201,15 +215,19 @@ private fun InfoCard(now: LocalDateTime, h24: Boolean, accent: Color, modifier: 
             Tile(Modifier.weight(1.25f)) {
                 Label(dateText(now, "EEEE d MMMM"), accent)
                 Spacer(Modifier.weight(1f))
-                BigText(timeText(now, h24), 56.sp, Color.White, FontWeight.Bold)
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    ClockText(timeText(now, h24), fitClock("00:00", maxWidth, 56.sp, FontWeight.Bold), Color.White, FontWeight.Bold)
+                }
             }
-            Tile(Modifier.weight(1f)) { WeatherTile(weather) }
+            Tile(Modifier.weight(1f), Modifier.weatherSky(weather.weather?.code, weather.weather?.day ?: true)) { WeatherTile(weather) }
         }
         Row(Modifier.weight(0.64f), horizontalArrangement = Arrangement.spacedBy(Pad)) {
-            Tile(Modifier.weight(1.25f)) {
-                Label(now.month.getDisplayName(DateStyle.FULL_STANDALONE, Locale.getDefault()), accent)
-                Spacer(Modifier.height(6.dp))
-                MiniMonth(now.toLocalDate(), accent, Modifier.weight(1f))
+            // the pop-up's landing spot, the tile's centre on screen; taken only while the page sits whole on screen, not mid-swipe
+            Tile(Modifier.weight(1.25f).onGloballyPositioned {
+                val p = it.positionInRoot()
+                if (p.x >= 0 && p.x + it.size.width <= it.findRootCoordinates().size.width) dock.value = p + Offset(it.size.width / 2f, it.size.height / 2f)
+            }) {
+                NotifList(notifs, listening, h24, accent, onOpen)
             }
             Tile(Modifier.weight(1f)) {
                 Label("Sveglia")
@@ -235,7 +253,7 @@ private fun InfoCard(now: LocalDateTime, h24: Boolean, accent: Color, modifier: 
 @Composable
 private fun ColumnScope.WeatherTile(state: WeatherState) {
     val w = state.weather
-    Label(if (w != null && w.city.isNotEmpty()) w.city else "Meteo")
+    Label(if (w != null && w.city.isNotEmpty()) w.city else "Meteo", if (w != null) Color.White.copy(alpha = 0.85f) else Muted)
     Spacer(Modifier.weight(1f))
     if (w == null) {
         Caption(state.error ?: "", lines = 3)
@@ -243,7 +261,7 @@ private fun ColumnScope.WeatherTile(state: WeatherState) {
     }
     Row {
         BigText("${w.temp}°", 40.sp, Color.White, FontWeight.Light, Modifier.alignByBaseline())
-        Caption("  ${w.hi}° / ${w.lo}°", Modifier.alignByBaseline())
+        Caption("  ${w.hi}° / ${w.lo}°", Modifier.alignByBaseline(), color = Color.White.copy(alpha = 0.8f))
     }
     Caption(weatherLabel(w.code), color = Color.White)
 }
@@ -258,44 +276,4 @@ private fun eventTime(e: Event, now: LocalDateTime, h24: Boolean): String {
     val start = LocalDateTime.ofInstant(Instant.ofEpochMilli(e.start), ZoneId.systemDefault())
     val day = dayLabel(start.toLocalDate(), now.toLocalDate())
     return if (e.allDay) "$day, tutto il giorno" else "$day, ${timeText(start, h24)}"
-}
-
-@Composable
-private fun MiniMonth(today: LocalDate, accent: Color, modifier: Modifier) {
-    val locale = Locale.getDefault()
-    val firstDow = WeekFields.of(locale).firstDayOfWeek
-    val offset = (today.withDayOfMonth(1).dayOfWeek.value - firstDow.value + 7) % 7
-    val days = today.lengthOfMonth()
-    val rows = (offset + days + 6) / 7
-    val font = LocalFont.current
-    Column(modifier.fillMaxWidth()) {
-        Row {
-            for (d in 0 until 7) Text(
-                firstDow.plus(d.toLong()).getDisplayName(DateStyle.SHORT, locale).take(1).uppercase(locale),
-                Modifier.weight(1f), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = font, textAlign = TextAlign.Center,
-            )
-        }
-        for (r in 0 until rows) Row(Modifier.weight(1f).fillMaxWidth()) {
-            for (c in 0 until 7) {
-                val day = r * 7 + c - offset + 1
-                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    if (day in 1..days) {
-                        val isToday = day == today.dayOfMonth
-                        // the circle takes the row's height, so six-week months still fit
-                        Box(
-                            Modifier.fillMaxHeight(0.92f).aspectRatio(1f).clip(CircleShape)
-                                .background(if (isToday) accent else Color.Transparent),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                "$day", color = if (isToday) Color.Black else Color.White, fontFamily = font,
-                                fontSize = 13.sp, fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium,
-                                style = TextStyle(fontFeatureSettings = "tnum"),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
 }

@@ -35,7 +35,7 @@ fun Context.granted(permission: String) = checkSelfPermission(permission) == Pac
 
 // ---------- weather ----------
 
-data class Weather(val city: String, val temp: Int, val code: Int, val hi: Int, val lo: Int)
+data class Weather(val city: String, val temp: Int, val code: Int, val hi: Int, val lo: Int, val day: Boolean = true)
 
 /** Either the weather or a short reason why not, shown in the widget. */
 data class WeatherState(val weather: Weather?, val error: String?)
@@ -52,7 +52,7 @@ suspend fun fetchWeather(context: Context): WeatherState {
         runCatching {
             val url = URL(
                 "https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}" +
-                    "&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1"
+                    "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1"
             )
             val conn = (url.openConnection() as HttpURLConnection).apply { connectTimeout = 10_000; readTimeout = 10_000 }
             val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
@@ -66,6 +66,7 @@ suspend fun fetchWeather(context: Context): WeatherState {
                 code = cur.getInt("weather_code"),
                 hi = daily.getJSONArray("temperature_2m_max").getDouble(0).roundToInt(),
                 lo = daily.getJSONArray("temperature_2m_min").getDouble(0).roundToInt(),
+                day = cur.optInt("is_day", 1) == 1,
             )
         }.fold({ WeatherState(it, null) }, { WeatherState(null, "Meteo non raggiungibile") })
     }
@@ -141,7 +142,8 @@ class PrecisePercent {
     private var anchorCounter = 0L
 
     fun update(level: Int, counterUah: Long): Double {
-        if (counterUah <= 0 || level <= 0) return level.toDouble()
+        // full is full: at 100 the counter keeps climbing and would read "100,99 %"
+        if (counterUah <= 0 || level <= 0 || level >= 100) return level.coerceIn(0, 100).toDouble()
         if (level != anchorLevel) { anchorLevel = level; anchorCounter = counterUah }
         val perPercent = counterUah.toDouble() / level
         return level + ((counterUah - anchorCounter) / perPercent).coerceIn(0.0, 0.99)

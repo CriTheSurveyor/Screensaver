@@ -10,6 +10,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.os.PowerManager
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -70,6 +71,7 @@ class StandByActivity : ComponentActivity() {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         Bus.shown = true
+        NotifService.hush(this, true)
         val prefs = Prefs(this)
         val preview = intent.getBooleanExtra("preview", false)
 
@@ -90,8 +92,16 @@ class StandByActivity : ComponentActivity() {
         }
     }
 
+    // Left with the screen still on (home gesture, a call, another app): close for real. Kept alive in the background,
+    // it held Bus.shown true and the watcher never opened StandBy again until the app was reopened.
+    override fun onStop() {
+        super.onStop()
+        if (!leaving && !isFinishing && getSystemService(PowerManager::class.java).isInteractive) finish()
+    }
+
     override fun onDestroy() {
         unregisterReceiver(powerKey)
+        NotifService.hush(this, false)
         Bus.shown = false
         super.onDestroy()
     }

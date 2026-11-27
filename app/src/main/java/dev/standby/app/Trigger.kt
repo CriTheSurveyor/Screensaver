@@ -1,6 +1,7 @@
 package dev.standby.app
 
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.abs
 
 /** Gravity on the phone's x/y axes (m/s²): true when it stands on its long side, as on a charging stand. Flat on a pad is not landscape. */
@@ -25,5 +26,8 @@ class Debounce(private val holdMs: Long) {
 /** Service <-> StandBy screen, same process. */
 object Bus {
     val exit = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    /** The phone's notifications, newest first, and each new one as it arrives for the pop-up. */
+    val notifs = MutableStateFlow(emptyList<Notif>())
+    val incoming = MutableSharedFlow<Notif>(extraBufferCapacity = 8)
     @Volatile var shown = false
 }

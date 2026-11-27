@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -92,6 +93,10 @@ fun StandByScreen(prefs: Prefs, night: Boolean) {
     val now by rememberNow()
     var accentIndex by remember { mutableIntStateOf(prefs.accent) }
     val font = Fonts[prefs.font.coerceIn(0, Fonts.lastIndex)].family
+    val clockFont = Fonts.getOrNull(prefs.clockFont - 1)?.family ?: font
+    val clockWeight = ClockWeights.getOrNull(prefs.clockWeight)?.second
+    // where the notifications tile sits on screen: the pop-up flies there when it's done
+    val dock = remember { mutableStateOf(Offset.Unspecified) }
     val accent = Accents[accentIndex % Accents.size]
     val pager = rememberPagerState(prefs.page) { 3 }
     LaunchedEffect(pager.settledPage) { prefs.page = pager.settledPage }
@@ -100,10 +105,10 @@ fun StandByScreen(prefs: Prefs, night: Boolean) {
     val driftX = ((now.minute % 5) - 2) * 2
     val driftY = ((now.minute % 3) - 1) * 2
 
-    CompositionLocalProvider(LocalFont provides font) { Box(Modifier.fillMaxSize().background(Color.Black).nightFilter(night)) {
+    CompositionLocalProvider(LocalFont provides font, LocalClockFont provides clockFont, LocalClockWeight provides clockWeight) { Box(Modifier.fillMaxSize().background(Color.Black).nightFilter(night)) {
         HorizontalPager(pager, Modifier.fillMaxSize().offset(driftX.dp, driftY.dp)) { page ->
             when (page) {
-                0 -> WidgetsPage(now, prefs, accent)
+                0 -> WidgetsPage(now, prefs, accent, dock)
                 1 -> PhotosPage(now, prefs)
                 else -> ClockPage(now, prefs, accent) {
                     accentIndex = (accentIndex + 1) % Accents.size
@@ -111,6 +116,7 @@ fun StandByScreen(prefs: Prefs, night: Boolean) {
                 }
             }
         }
+        NotifPopup(dock.value)
     } }
 }
 
@@ -145,19 +151,18 @@ private fun ClockPage(now: LocalDateTime, prefs: Prefs, accent: Color, nextColou
 @Composable
 private fun DigitalClock(now: LocalDateTime, h24: Boolean, seconds: Boolean, accent: Color) =
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        // width budget in em: "10:42" is about 2.5, "10:42:07" about 4
-        val size = with(LocalDensity.current) { minOf(maxWidth / if (seconds) 4.4f else 2.9f, maxHeight * 0.9f).toSp() }
-        BigText(timeText(now, h24, seconds), size, accent, FontWeight.Bold)
+        val size = fitClock(if (seconds) "00:00:00" else "00:00", maxWidth * 0.94f, with(LocalDensity.current) { (maxHeight * 0.9f).toSp() }, FontWeight.Bold)
+        ClockText(timeText(now, h24, seconds), size, accent, FontWeight.Bold)
     }
 
 @Composable
 private fun StackedClock(now: LocalDateTime, h24: Boolean, accent: Color) =
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        val size = with(LocalDensity.current) { minOf(maxHeight * 0.47f, maxWidth / 1.5f).toSp() }
+        val size = fitClock("00", maxWidth * 0.9f, with(LocalDensity.current) { (maxHeight * 0.47f).toSp() }, FontWeight.Black)
         val (h, m) = timeText(now, h24).split(":")
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            BigText(h, size, accent, FontWeight.Black)
-            BigText(m, size, Color.White, FontWeight.Black)
+            ClockText(h, size, accent, FontWeight.Black)
+            ClockText(m, size, Color.White, FontWeight.Black)
         }
     }
 
@@ -175,9 +180,9 @@ private fun SolarClock(now: LocalDateTime, h24: Boolean, accent: Color) =
         },
         contentAlignment = Alignment.Center,
     ) {
-        val size = with(LocalDensity.current) { minOf(maxWidth / 3.1f, maxHeight * 0.62f).toSp() }
+        val size = fitClock("00:00", maxWidth * 0.8f, with(LocalDensity.current) { (maxHeight * 0.62f).toSp() }, FontWeight.Thin)
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            BigText(timeText(now, h24), size, Color.White, FontWeight.Thin)
+            ClockText(timeText(now, h24), size, Color.White, FontWeight.Thin)
             Title(dateText(now, "EEEE d MMMM"), color = Muted)
         }
     }
@@ -257,7 +262,7 @@ private fun PhotosPage(now: LocalDateTime, prefs: Prefs) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.5f), 0.55f to Color.Transparent)))
         Column(Modifier.padding(horizontal = 36.dp, vertical = 28.dp)) {
             Title(dateText(now, "EEEE d MMMM"), color = Color.White.copy(alpha = 0.85f))
-            BigText(timeText(now, prefs.use24h), 96.sp, Color.White, FontWeight.Bold)
+            ClockText(timeText(now, prefs.use24h), 96.sp, Color.White, FontWeight.Bold)
         }
     }
 }

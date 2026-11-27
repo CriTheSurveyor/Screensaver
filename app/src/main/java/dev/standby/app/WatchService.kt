@@ -86,6 +86,8 @@ class WatchService : Service(), SensorEventListener {
             addAction(Intent.ACTION_SCREEN_ON)
         }
         ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        // a crash or a kill while StandBy was on screen left Do Not Disturb on: put the user's settings back
+        if (!Bus.shown) NotifService.hush(this, false)
         handler.postDelayed(updateCheck, 60_000L)
     }
 

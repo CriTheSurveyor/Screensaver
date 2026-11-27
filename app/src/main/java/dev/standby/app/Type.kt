@@ -3,6 +3,10 @@ package dev.standby.app
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -33,18 +37,30 @@ val Fonts = listOf(
     FontChoice("Moderno", variable(R.font.inter)),
     FontChoice("Geometrico", variable(R.font.outfit)),
     FontChoice("Elegante", variable(R.font.playfair)),
+    FontChoice("Condensato", variable(R.font.oswald)),
+    FontChoice("Monospazio", variable(R.font.jetbrains)),
 )
 
 val LocalFont = compositionLocalOf<FontFamily> { FontFamily.SansSerif }
+
+/** The clock's own face and weight; null weight = each clock style keeps its own. */
+val ClockWeights = listOf<Pair<String, FontWeight?>>(
+    "Auto" to null, "Sottile" to FontWeight.ExtraLight, "Leggero" to FontWeight.Light,
+    "Normale" to FontWeight.Medium, "Grassetto" to FontWeight.Bold, "Nero" to FontWeight.Black,
+)
+val LocalClockFont = compositionLocalOf<FontFamily> { FontFamily.SansSerif }
+val LocalClockWeight = compositionLocalOf<FontWeight?> { null }
+
+private val Tight = (-0.03).em
 
 // The whole StandBy type scale. Every text on screen is one of these five, so sizes and weights never drift.
 // Display: big numerals. Title: a tile's main value. Body: a line of content. Caption: secondary grey. Label: small caps headers.
 
 @Composable
-fun BigText(text: String, size: TextUnit, color: Color, weight: FontWeight, modifier: Modifier = Modifier) = Text(
+fun BigText(text: String, size: TextUnit, color: Color, weight: FontWeight, modifier: Modifier = Modifier, family: FontFamily = LocalFont.current) = Text(
     text, modifier,
-    color = color, fontSize = size, fontWeight = weight, fontFamily = LocalFont.current,
-    letterSpacing = (-0.03).em, lineHeight = size, maxLines = 1, softWrap = false,
+    color = color, fontSize = size, fontWeight = weight, fontFamily = family,
+    letterSpacing = Tight, lineHeight = size, maxLines = 1, softWrap = false,
     style = TextStyle(
         fontFeatureSettings = "tnum",
         lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
@@ -76,3 +92,21 @@ private fun Line(text: String, size: TextUnit, weight: FontWeight, color: Color,
     color = color, fontSize = size, fontWeight = weight, fontFamily = LocalFont.current,
     maxLines = lines, overflow = TextOverflow.Ellipsis, style = TextStyle(fontFeatureSettings = "tnum"),
 )
+
+/** A time readout in the clock's chosen face and weight. */
+@Composable
+fun ClockText(text: String, size: TextUnit, color: Color, weight: FontWeight, modifier: Modifier = Modifier) =
+    BigText(text, size, color, LocalClockWeight.current ?: weight, modifier, LocalClockFont.current)
+
+/** The biggest size at which [sample] fits [maxWidth] in the clock's face and weight, never above [cap]: any font fills its space. */
+@Composable
+fun fitClock(sample: String, maxWidth: Dp, cap: TextUnit, weight: FontWeight): TextUnit {
+    val measurer = rememberTextMeasurer()
+    val family = LocalClockFont.current
+    val w = LocalClockWeight.current ?: weight
+    val ref = remember(sample, family, w) {
+        measurer.measure(sample, TextStyle(fontSize = 100.sp, fontFamily = family, fontWeight = w, letterSpacing = Tight, fontFeatureSettings = "tnum")).size.width
+    }
+    val fit = with(LocalDensity.current) { 100f * maxWidth.toPx() / ref.coerceAtLeast(1) }
+    return minOf(fit, cap.value).sp
+}

@@ -109,12 +109,15 @@ private fun SettingsScreen(prefs: Prefs, resumed: Int) {
     val battery = remember(key) { context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName) }
     val calendar = remember(key) { context.granted(Manifest.permission.READ_CALENDAR) }
     val location = remember(key) { context.granted(Manifest.permission.ACCESS_COARSE_LOCATION) }
+    val notifications = remember(key) { NotifService.enabled(context) }
 
     var enabled by remember { mutableStateOf(prefs.enabled) }
     var wireless by remember { mutableStateOf(prefs.wirelessOnly) }
     var night by remember { mutableIntStateOf(prefs.nightMode) }
     var seconds by remember { mutableStateOf(prefs.showSeconds) }
     var font by remember { mutableIntStateOf(prefs.font) }
+    var clockFont by remember { mutableIntStateOf(prefs.clockFont) }
+    var clockWeight by remember { mutableIntStateOf(prefs.clockWeight) }
     var accent by remember { mutableIntStateOf(prefs.accent) }
     var photoSeconds by remember { mutableIntStateOf(prefs.photoSeconds) }
 
@@ -180,6 +183,10 @@ private fun SettingsScreen(prefs: Prefs, resumed: Int) {
                 if (!battery) openSystem(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
             }
             Line()
+            LinkRow("Notifiche nello StandBy", if (notifications) "Attivo" else "Consenti", warn = !notifications) {
+                context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+            Line()
             LinkRow("Calendario", if (calendar) "Attivo" else "Consenti") {
                 if (!calendar) ask.launch(Manifest.permission.READ_CALENDAR)
             }
@@ -193,6 +200,20 @@ private fun SettingsScreen(prefs: Prefs, resumed: Int) {
             ChoiceRow("Carattere", Fonts.map { it.name }, font, Fonts.map { it.family }) {
                 font = it
                 prefs.font = it
+            }
+            Line()
+            val textFamily = Fonts[font.coerceIn(0, Fonts.lastIndex)].family
+            ChoiceRow("Carattere dell'ora", listOf("Come il testo") + Fonts.map { it.name }, clockFont, listOf(textFamily) + Fonts.map { it.family }) {
+                clockFont = it
+                prefs.clockFont = it
+            }
+            Line()
+            ChoiceRow(
+                "Spessore dell'ora", ClockWeights.map { it.first }, clockWeight,
+                List(ClockWeights.size) { Fonts.getOrNull(clockFont - 1)?.family ?: textFamily }, ClockWeights.map { it.second },
+            ) {
+                clockWeight = it
+                prefs.clockWeight = it
             }
             Line()
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -272,7 +293,7 @@ private fun SettingsScreen(prefs: Prefs, resumed: Int) {
             Text("Prova StandBy", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         }
         Text(
-            "Nella schermata: tocca l'orologio per cambiare colore, scorri in verticale per cambiare stile. Tasto di accensione per tornare al telefono.",
+            "Nella schermata: tocca l'orologio per cambiare colore, scorri in verticale per cambiare stile, tocca una notifica per leggerla tutta. Tasto di accensione per tornare al telefono.",
             color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp, start = 4.dp, end = 4.dp),
         )
     }
@@ -308,7 +329,7 @@ private fun ToggleRow(title: String, checked: Boolean, subtitle: String? = null,
 }
 
 @Composable
-private fun ChoiceRow(title: String, options: List<String>, selected: Int, fonts: List<FontFamily>? = null, onSelect: (Int) -> Unit) {
+private fun ChoiceRow(title: String, options: List<String>, selected: Int, fonts: List<FontFamily>? = null, weights: List<FontWeight?>? = null, onSelect: (Int) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text(title, color = Color.White, fontSize = 17.sp)
         Row(Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -318,7 +339,7 @@ private fun ChoiceRow(title: String, options: List<String>, selected: Int, fonts
                     label,
                     Modifier.clip(RoundedCornerShape(50)).background(if (on) Color.White else Color(0xFF2C2C2E))
                         .clickable { onSelect(i) }.padding(horizontal = 16.dp, vertical = 10.dp),
-                    color = if (on) Color.Black else Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    color = if (on) Color.Black else Color.White, fontSize = 15.sp, fontWeight = weights?.get(i) ?: FontWeight.SemiBold,
                     fontFamily = fonts?.get(i),
                 )
             }

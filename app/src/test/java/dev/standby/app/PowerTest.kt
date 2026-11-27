@@ -11,6 +11,9 @@ class PowerTest {
         assertEquals(50.99, p.update(50, 2_100_000), 0.001)   // never shows the next whole percent early
         assertEquals(51.0, p.update(51, 2_100_000), 0.001)    // new tick, new anchor
         assertEquals(37.0, p.update(37, 0), 0.001)            // phone without a charge counter
+        assertEquals(99.0, p.update(99, 4_000_000), 0.001)
+        assertEquals(100.0, p.update(100, 4_100_000), 0.001)  // never above 100
+        assertEquals(100.0, p.update(100, 4_200_000), 0.001)
     }
 
     @Test fun currentUnitsAndSign() {
