@@ -68,12 +68,12 @@ fun BigText(text: String, size: TextUnit, color: Color, weight: FontWeight, modi
 )
 
 @Composable
-fun Title(text: String, modifier: Modifier = Modifier, color: Color = Color.White) =
-    Line(text, 22.sp, FontWeight.SemiBold, color, modifier)
+fun Title(text: String, modifier: Modifier = Modifier, color: Color = Color.White, lines: Int = 1) =
+    Line(text, 22.sp, FontWeight.SemiBold, color, modifier, lines)
 
 @Composable
-fun Body(text: String, modifier: Modifier = Modifier, color: Color = Color.White) =
-    Line(text, 16.sp, FontWeight.Medium, color, modifier)
+fun Body(text: String, modifier: Modifier = Modifier, color: Color = Color.White, lines: Int = 1) =
+    Line(text, 16.sp, FontWeight.Medium, color, modifier, lines)
 
 @Composable
 fun Caption(text: String, modifier: Modifier = Modifier, color: Color = Muted, lines: Int = 1) =

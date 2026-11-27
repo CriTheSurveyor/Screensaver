@@ -20,10 +20,15 @@ class NotifService : NotificationListenerService() {
     private val icons = HashMap<String, Pair<String, ImageBitmap?>>()
 
     override fun onListenerConnected() {
+        instance = this
         Bus.notifs.value = activeNotifications.orEmpty().mapNotNull(::toNotif).sortedByDescending { it.time }
         // Android rebinds this listener by itself after the app's process is killed: the watcher comes back with it
         if (Prefs(this).enabled) runCatching { WatchService.start(this) }
         if (!Bus.shown) hush(this, false)
+    }
+
+    override fun onListenerDisconnected() {
+        instance = null
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -70,6 +75,13 @@ class NotifService : NotificationListenerService() {
     }
 
     companion object {
+        @Volatile private var instance: NotifService? = null
+
+        /** Clears them on the phone too, as "Clear all" in the shade does; the list empties through onNotificationRemoved. */
+        fun clearAll() {
+            instance?.cancelAllNotifications()
+        }
+
         fun enabled(context: Context) = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
 
         /**

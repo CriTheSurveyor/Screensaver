@@ -25,15 +25,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.ui.layout.findRootCoordinates
-import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -74,15 +70,14 @@ private val Hairline = Color(0xFF3A3A3C)
 
 /** Left: the charging circle. Right: time, weather, notifications, alarm and next event in four tiles. */
 @Composable
-fun WidgetsPage(now: LocalDateTime, prefs: Prefs, accent: Color, dock: MutableState<Offset>) {
+fun WidgetsPage(now: LocalDateTime, prefs: Prefs, accent: Color, dock: Dock) {
     var open by remember { mutableStateOf<Notif?>(null) }
-    Box(Modifier.fillMaxSize()) {
+    NotifPreviewHost(open, prefs.use24h, dock, { open = null }) { blur ->
         // wide side margins keep the cards clear of the camera cutout, whichever side it lands on
-        Row(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(Gap), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxSize().then(blur).padding(horizontal = 48.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(Gap), verticalAlignment = Alignment.CenterVertically) {
             PowerCircle(Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true))
             InfoCard(now, prefs.use24h, accent, dock, { open = it }, Modifier.weight(1f))
         }
-        NotifPreview(open, prefs.use24h) { open = null }
     }
 }
 
@@ -190,7 +185,7 @@ private fun duration(ms: Long): String {
 // ---------- info ----------
 
 @Composable
-private fun InfoCard(now: LocalDateTime, h24: Boolean, accent: Color, dock: MutableState<Offset>, onOpen: (Notif) -> Unit, modifier: Modifier) {
+private fun InfoCard(now: LocalDateTime, h24: Boolean, accent: Color, dock: Dock, onOpen: (Notif) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     val events by produceState(emptyList<Event>(), now.minute / 5) {
         value = withContext(Dispatchers.IO) { upcomingEvents(context) }
@@ -222,12 +217,8 @@ private fun InfoCard(now: LocalDateTime, h24: Boolean, accent: Color, dock: Muta
             Tile(Modifier.weight(1f), Modifier.weatherSky(weather.weather?.code, weather.weather?.day ?: true)) { WeatherTile(weather) }
         }
         Row(Modifier.weight(0.64f), horizontalArrangement = Arrangement.spacedBy(Pad)) {
-            // the pop-up's landing spot, the tile's centre on screen; taken only while the page sits whole on screen, not mid-swipe
-            Tile(Modifier.weight(1.25f).onGloballyPositioned {
-                val p = it.positionInRoot()
-                if (p.x >= 0 && p.x + it.size.width <= it.findRootCoordinates().size.width) dock.value = p + Offset(it.size.width / 2f, it.size.height / 2f)
-            }) {
-                NotifList(notifs, listening, h24, accent, onOpen)
+            Tile(Modifier.weight(1.25f)) {
+                NotifList(notifs, listening, h24, accent, dock, onOpen)
             }
             Tile(Modifier.weight(1f)) {
                 Label("Sveglia")

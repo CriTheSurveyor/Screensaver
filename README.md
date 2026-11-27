@@ -7,7 +7,8 @@ La modalità StandBy di iPhone, su Android: quando il telefono è **in carica wi
 - **Widget**: a sinistra la ricarica nel dettaglio (percentuale con i centesimi, watt, mA, volt, temperatura, tempo alla carica completa); a destra ora, data, meteo, notifiche, prossimo evento e sveglia.
 - **Orologio a tutto schermo** in 4 stili (scorri su/giù): digitale, analogico, solare, impilato. Tocca per cambiare colore.
 - **Foto**: presentazione delle foto che scegli, con ora e data.
-- **Notifiche**: ogni nuova notifica appare grande al centro (icona dell'app, come su iPhone), dopo 4 secondi rimpicciolisce e finisce nel riquadro Notifiche dei widget; toccala per leggere tutto il testo. Mentre StandBy è aperto il banner di sistema è bloccato (Non disturbare con sveglie, chiamate e media consentiti; le impostazioni tornano come prima all'uscita). Serve **Notifiche nello StandBy** nelle impostazioni dell'app.
+- **Notifiche**: ogni nuova notifica appare grande al centro (icona dell'app, come su iPhone), dopo 4 secondi rimpicciolisce e finisce nel riquadro Notifiche dei widget; toccala per leggere tutto il testo; in fondo alla lista **Cancella tutte**. Mentre StandBy è aperto il banner di sistema è bloccato (Non disturbare con sveglie, chiamate e media consentiti; le impostazioni tornano come prima all'uscita). Serve **Notifiche nello StandBy** nelle impostazioni dell'app.
+- **Sensore di prossimità**: coperto per più di 5 secondi lo schermo si spegne; scoperto, StandBy si riaccende.
 - **Meteo animato**: dietro il riquadro meteo il cielo si muove secondo il tempo attuale (sole, stelle, nuvole, pioggia, neve, nebbia, temporale).
 - **Ora personalizzabile**: carattere (7 a scelta) e spessore dell'ora separati dal resto del testo.
 - **Aggiornamenti**: ogni push su GitHub crea una Release; si installa dal tasto Versione nell'app.

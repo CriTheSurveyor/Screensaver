@@ -95,8 +95,7 @@ fun StandByScreen(prefs: Prefs, night: Boolean) {
     val font = Fonts[prefs.font.coerceIn(0, Fonts.lastIndex)].family
     val clockFont = Fonts.getOrNull(prefs.clockFont - 1)?.family ?: font
     val clockWeight = ClockWeights.getOrNull(prefs.clockWeight)?.second
-    // where the notifications tile sits on screen: the pop-up flies there when it's done
-    val dock = remember { mutableStateOf(Offset.Unspecified) }
+    val dock = remember { Dock() }
     val accent = Accents[accentIndex % Accents.size]
     val pager = rememberPagerState(prefs.page) { 3 }
     LaunchedEffect(pager.settledPage) { prefs.page = pager.settledPage }
@@ -106,7 +105,7 @@ fun StandByScreen(prefs: Prefs, night: Boolean) {
     val driftY = ((now.minute % 3) - 1) * 2
 
     CompositionLocalProvider(LocalFont provides font, LocalClockFont provides clockFont, LocalClockWeight provides clockWeight) { Box(Modifier.fillMaxSize().background(Color.Black).nightFilter(night)) {
-        HorizontalPager(pager, Modifier.fillMaxSize().offset(driftX.dp, driftY.dp)) { page ->
+        NotifHost(dock) { blur -> HorizontalPager(pager, Modifier.fillMaxSize().offset(driftX.dp, driftY.dp).then(blur)) { page ->
             when (page) {
                 0 -> WidgetsPage(now, prefs, accent, dock)
                 1 -> PhotosPage(now, prefs)
@@ -115,8 +114,7 @@ fun StandByScreen(prefs: Prefs, night: Boolean) {
                     prefs.accent = accentIndex
                 }
             }
-        }
-        NotifPopup(dock.value)
+        } }
     } }
 }
 

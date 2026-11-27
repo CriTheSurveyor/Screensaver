@@ -10,6 +10,8 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -35,6 +37,25 @@ import androidx.core.view.WindowInsetsControllerCompat
 
 class StandByActivity : ComponentActivity() {
     private var leaving = false
+    private val handler = Handler(Looper.getMainLooper())
+
+    // Covered for 5 s (face down, in a drawer): the screen goes dark with the proximity wake lock phone calls use.
+    // Uncovered, Android lights it again on StandBy. The phone stays "on", so no screen-off broadcast and the power-key logic is untouched.
+    private val pocket by lazy {
+        getSystemService(PowerManager::class.java).takeIf { it.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK) }
+            ?.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "standby:pocket")
+    }
+    private val darken = Runnable { pocket?.takeIf { !it.isHeld }?.acquire(12 * 3600_000L) }
+    private val proximity = object : SensorEventListener {
+        override fun onSensorChanged(e: SensorEvent) {
+            // many sensors only report 0 or their maximum: near is anything under it
+            val near = e.values[0] < minOf(e.sensor.maximumRange, 5f)
+            handler.removeCallbacks(darken)
+            if (near) handler.postDelayed(darken, 5000)
+            else pocket?.takeIf { it.isHeld }?.release()
+        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
 
     // Apps never see the power key itself; while StandBy keeps the screen on, a screen-off can only be that key.
     private val powerKey = object : BroadcastReceiver() {
@@ -72,6 +93,9 @@ class StandByActivity : ComponentActivity() {
         }
         Bus.shown = true
         NotifService.hush(this, true)
+        getSystemService(SensorManager::class.java).run {
+            getDefaultSensor(Sensor.TYPE_PROXIMITY)?.let { registerListener(proximity, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        }
         val prefs = Prefs(this)
         val preview = intent.getBooleanExtra("preview", false)
 
@@ -96,11 +120,15 @@ class StandByActivity : ComponentActivity() {
     // it held Bus.shown true and the watcher never opened StandBy again until the app was reopened.
     override fun onStop() {
         super.onStop()
-        if (!leaving && !isFinishing && getSystemService(PowerManager::class.java).isInteractive) finish()
+        // dark from the proximity sensor is not leaving: StandBy must be there when it's uncovered
+        if (!leaving && !isFinishing && pocket?.isHeld != true && getSystemService(PowerManager::class.java).isInteractive) finish()
     }
 
     override fun onDestroy() {
         unregisterReceiver(powerKey)
+        getSystemService(SensorManager::class.java).unregisterListener(proximity)
+        handler.removeCallbacks(darken)
+        pocket?.takeIf { it.isHeld }?.release()
         NotifService.hush(this, false)
         Bus.shown = false
         super.onDestroy()
