@@ -3,6 +3,7 @@ package dev.standby.app
 import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -24,7 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -35,7 +37,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,7 +57,11 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -62,6 +71,8 @@ private val RowBg = Color(0xFF3A3A3C)
 private val CardPad = 24.dp
 private val IconGap = 16.dp
 private val LineGap = 8.dp
+private const val SlideMs = 280
+private const val StaggerMs = 45
 
 /** Where each notification row's icon sits on screen, so a big logo can turn into it, and back. */
 class Dock {
@@ -164,6 +175,20 @@ private fun AppIcon(n: Notif, size: Dp, modifier: Modifier = Modifier) {
 /** The notifications tile: newest first, a tap opens the whole text, a button at the end clears them all. */
 @Composable
 fun ColumnScope.NotifList(list: List<Notif>, listening: Boolean, h24: Boolean, accent: Color, dock: Dock, onOpen: (Notif) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val scroll = rememberLazyListState()
+    val sweep = remember { Animatable(0f) }
+    val latest by rememberUpdatedState(list)
+    // iOS "Clear all": the rows slide off to the side one after another, then they go from the phone too
+    val stagger = minOf(list.size - 1, 8).coerceAtLeast(0) * StaggerMs
+    fun clear() = scope.launch {
+        if (sweep.isRunning) return@launch
+        sweep.animateTo(1f, tween(SlideMs + stagger, easing = LinearEasing))
+        NotifService.clearAll()
+        // the ones the phone won't clear (or a listener not connected) slide back in
+        withTimeoutOrNull(1500) { snapshotFlow { latest.isEmpty() }.first { it } }
+        sweep.snapTo(0f)
+    }
     Label(if (list.isEmpty()) "Notifiche" else "Notifiche · ${list.size}", accent)
     Spacer(Modifier.height(LineGap))
     if (!listening || list.isEmpty()) {
@@ -173,11 +198,19 @@ fun ColumnScope.NotifList(list: List<Notif>, listening: Boolean, h24: Boolean, a
         Spacer(Modifier.weight(1f))
         return
     }
-    LazyColumn(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        items(list, key = { it.key }) { n ->
+    // a new one lands on top: scroll there, so the pop-up's logo has its row to fly into instead of fading out
+    LaunchedEffect(list.first()) { scroll.animateScrollToItem(0) }
+    LazyColumn(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)), scroll, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        itemsIndexed(list, key = { _, n -> n.key }) { i, n ->
             DisposableEffect(n.key) { onDispose { dock.icons.remove(n.key) } }
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(RowBg).clickable { onOpen(n) }.padding(10.dp),
+                Modifier.fillMaxWidth()
+                    .graphicsLayer {
+                        val f = FastOutSlowInEasing.transform(((sweep.value * (SlideMs + stagger) - minOf(i, 8) * StaggerMs) / SlideMs).coerceIn(0f, 1f))
+                        translationX = size.width * f
+                        alpha = 1 - f
+                    }
+                    .clip(RoundedCornerShape(16.dp)).background(RowBg).clickable { onOpen(n) }.padding(10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 AppIcon(
@@ -198,8 +231,8 @@ fun ColumnScope.NotifList(list: List<Notif>, listening: Boolean, h24: Boolean, a
         }
         item(key = "clear") {
             Box(
-                Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(16.dp)).background(RowBg)
-                    .clickable { NotifService.clearAll() },
+                Modifier.fillMaxWidth().heightIn(min = 44.dp).graphicsLayer { alpha = 1 - sweep.value }
+                    .clip(RoundedCornerShape(16.dp)).background(RowBg).clickable { clear() },
                 contentAlignment = Alignment.Center,
             ) { Body("Cancella tutte", color = accent) }
         }
@@ -211,7 +244,8 @@ fun ColumnScope.NotifList(list: List<Notif>, listening: Boolean, h24: Boolean, a
  * every line of the text below, scrollable; tap anywhere and the icon goes back into its row.
  */
 @Composable
-fun NotifPreviewHost(open: Notif?, h24: Boolean, dock: Dock, onClose: () -> Unit, content: @Composable (Modifier) -> Unit) {
+fun NotifPreviewHost(open: Notif?, h24: Boolean, accent: Color, dock: Dock, onClose: () -> Unit, content: @Composable (Modifier) -> Unit) {
+    val context = LocalContext.current
     val t = remember { Animatable(0f) }
     var shown by remember { mutableStateOf<Notif?>(null) }
     LaunchedEffect(open) {
@@ -255,6 +289,16 @@ fun NotifPreviewHost(open: Notif?, h24: Boolean, dock: Dock, onClose: () -> Unit
                         Spacer(Modifier.height(LineGap))
                     }
                     Body(m.text, color = Color.White.copy(alpha = 0.9f), lines = Int.MAX_VALUE)
+                }
+                // outside the scrolling text, so it's always there; only when the app gave the notification a tap action
+                if (m.intent != null) {
+                    Spacer(Modifier.height(IconGap))
+                    Box(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).graphicsLayer { alpha = a() }
+                            .clip(RoundedCornerShape(16.dp)).background(RowBg)
+                            .clickable { onClose(); context.openNotif(m) },
+                        contentAlignment = Alignment.Center,
+                    ) { Body("Apri in ${m.app}", color = accent) }
                 }
             }
         }

@@ -1,5 +1,6 @@
 package dev.standby.app
 
+import android.app.Activity
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -134,6 +135,18 @@ class StandByActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
+
+/** Hands over to another app; over the lock screen it asks for fingerprint/PIN first, as the shade does. Leaving, StandBy closes (onStop). */
+fun Context.leaveTo(go: () -> Unit) {
+    val km = getSystemService(KeyguardManager::class.java)
+    val activity = this as? Activity
+    if (activity == null || !km.isKeyguardLocked) return go()
+    km.requestDismissKeyguard(activity, object : KeyguardManager.KeyguardDismissCallback() {
+        override fun onDismissSucceeded() = go()
+    })
+}
+
+fun Context.launch(intent: Intent) = leaveTo { runCatching { startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
 
 /** Night mode as on iOS: the room goes dark, the screen turns dim red. Hysteresis stops it flickering at dusk. */
 @Composable

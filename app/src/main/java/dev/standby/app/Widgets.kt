@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,7 +73,7 @@ private val Hairline = Color(0xFF3A3A3C)
 @Composable
 fun WidgetsPage(now: LocalDateTime, prefs: Prefs, accent: Color, dock: Dock) {
     var open by remember { mutableStateOf<Notif?>(null) }
-    NotifPreviewHost(open, prefs.use24h, dock, { open = null }) { blur ->
+    NotifPreviewHost(open, prefs.use24h, accent, dock, { open = null }) { blur ->
         // wide side margins keep the cards clear of the camera cutout, whichever side it lands on
         Row(Modifier.fillMaxSize().then(blur).padding(horizontal = 48.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(Gap), verticalAlignment = Alignment.CenterVertically) {
             PowerCircle(Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true))
@@ -220,22 +221,25 @@ private fun InfoCard(now: LocalDateTime, h24: Boolean, accent: Color, dock: Dock
             Tile(Modifier.weight(1.25f)) {
                 NotifList(notifs, listening, h24, accent, dock, onOpen)
             }
-            Tile(Modifier.weight(1f)) {
-                Label("Sveglia")
-                if (alarm != null) {
-                    val t = LocalDateTime.ofInstant(Instant.ofEpochMilli(alarm), ZoneId.systemDefault())
-                    Title(timeText(t, h24))
-                    Caption(dayLabel(t.toLocalDate(), now.toLocalDate()))
-                } else {
-                    Title("Nessuna", color = Muted)
+            // two tap targets, each a full half of the tile out to its edges: alarm opens the clock app, event the calendar
+            Column(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(TileRadius)).background(TileBg)) {
+                Column(Modifier.weight(1f).fillMaxWidth().clickable { context.openAlarms() }.padding(16.dp)) {
+                    Label("Sveglia", accent)
+                    if (alarm != null) {
+                        val t = LocalDateTime.ofInstant(Instant.ofEpochMilli(alarm), ZoneId.systemDefault())
+                        Title(timeText(t, h24))
+                        Caption(dayLabel(t.toLocalDate(), now.toLocalDate()))
+                    } else {
+                        Title("Nessuna", color = Muted)
+                    }
                 }
-                Spacer(Modifier.weight(1f))
-                Box(Modifier.fillMaxWidth().height(0.5.dp).background(Hairline))
-                Spacer(Modifier.weight(1f))
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(0.5.dp).background(Hairline))
                 val e = events.firstOrNull()
-                Label("Prossimo evento")
-                Body(e?.title ?: "Nessun evento", color = if (e != null) Color.White else Muted)
-                Caption(e?.let { eventTime(it, now, h24) } ?: "nei prossimi 7 giorni")
+                Column(Modifier.weight(1f).fillMaxWidth().clickable { context.openEvent(e) }.padding(16.dp), verticalArrangement = Arrangement.Bottom) {
+                    Label("Prossimo evento", accent)
+                    Body(e?.title ?: "Nessun evento", color = if (e != null) Color.White else Muted)
+                    Caption(e?.let { eventTime(it, now, h24) } ?: "nei prossimi 7 giorni")
+                }
             }
         }
     }

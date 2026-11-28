@@ -16,6 +16,8 @@ import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.CancellationSignal
+import android.provider.AlarmClock
+import android.provider.CalendarContract
 import android.provider.CalendarContract.Instances
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -105,7 +107,7 @@ fun weatherLabel(code: Int) = when (code) {
 
 // ---------- calendar, alarm ----------
 
-data class Event(val start: Long, val title: String, val allDay: Boolean)
+data class Event(val id: Long, val start: Long, val end: Long, val title: String, val allDay: Boolean)
 
 fun upcomingEvents(context: Context): List<Event> {
     if (!context.granted(Manifest.permission.READ_CALENDAR)) return emptyList()
@@ -115,12 +117,22 @@ fun upcomingEvents(context: Context): List<Event> {
         ContentUris.appendId(it, now + 7 * 24 * 3600_000L)
     }.build()
     return runCatching {
-        context.contentResolver.query(uri, arrayOf(Instances.BEGIN, Instances.TITLE, Instances.ALL_DAY), null, null, "${Instances.BEGIN} ASC")
-            ?.use { c -> buildList { while (size < 4 && c.moveToNext()) add(Event(c.getLong(0), c.getString(1) ?: "", c.getInt(2) == 1)) } }
+        context.contentResolver.query(uri, arrayOf(Instances.BEGIN, Instances.TITLE, Instances.ALL_DAY, Instances.EVENT_ID, Instances.END), null, null, "${Instances.BEGIN} ASC")
+            ?.use { c -> buildList { while (size < 4 && c.moveToNext()) add(Event(c.getLong(3), c.getLong(0), c.getLong(4), c.getString(1) ?: "", c.getInt(2) == 1)) } }
     }.getOrNull() ?: emptyList()
 }
 
 fun nextAlarm(context: Context): Long? = context.getSystemService(AlarmManager::class.java).nextAlarmClock?.triggerTime
+
+/** The phone's clock app on its alarms page. */
+fun Context.openAlarms() = launch(Intent(AlarmClock.ACTION_SHOW_ALARMS))
+
+/** The calendar app on that event, or on today when there is none. */
+fun Context.openEvent(e: Event?) = launch(
+    if (e == null) Intent(Intent.ACTION_VIEW, CalendarContract.CONTENT_URI.buildUpon().appendPath("time").appendPath("${System.currentTimeMillis()}").build())
+    else Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, e.id))
+        .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, e.start).putExtra(CalendarContract.EXTRA_EVENT_END_TIME, e.end)
+)
 
 // ---------- battery ----------
 

@@ -1,6 +1,8 @@
 package dev.standby.app
 
+import android.app.ActivityOptions
 import android.app.Notification
+import android.app.PendingIntent
 import android.app.NotificationManager
 import android.app.NotificationManager.Policy
 import android.content.Context
@@ -13,7 +15,15 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.graphics.drawable.toBitmap
 
-data class Notif(val key: String, val app: String, val icon: ImageBitmap?, val title: String, val text: String, val time: Long)
+data class Notif(val key: String, val app: String, val icon: ImageBitmap?, val title: String, val text: String, val time: Long, val intent: PendingIntent?)
+
+/** What tapping it in the shade does: the app opens on that chat, mail, ... */
+fun Context.openNotif(n: Notif) = leaveTo {
+    // from Android 14 the app sending someone else's PendingIntent must lend it its right to start activities
+    val opts = if (Build.VERSION.SDK_INT >= 34) ActivityOptions.makeBasic()
+        .setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle() else null
+    runCatching { n.intent?.send(this, 0, null, null, null, null, opts) }
+}
 
 /** Every notification on the phone, mirrored into StandBy's own list and pop-up. */
 class NotifService : NotificationListenerService() {
@@ -62,7 +72,7 @@ class NotifService : NotificationListenerService() {
             ?: e.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
         if (title.isBlank() && text.isBlank()) return null
         val (app, icon) = icons.getOrPut(sbn.packageName) { appInfo(sbn) }
-        return Notif(sbn.key, app, icon, title, text, sbn.postTime)
+        return Notif(sbn.key, app, icon, title, text, sbn.postTime, n.contentIntent)
     }
 
     private fun appInfo(sbn: StatusBarNotification): Pair<String, ImageBitmap?> {
